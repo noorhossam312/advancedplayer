@@ -6,9 +6,9 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/noorhossam312/advancedplayer/internal/downloader"
+	"github.com/noorhossam312/advancedplayer/internal/numfuncs"
 	"github.com/noorhossam312/advancedplayer/internal/pathfuncs"
 	"github.com/noorhossam312/advancedplayer/internal/searcher"
 	"github.com/noorhossam312/advancedplayer/internal/timefuncs"
@@ -28,6 +28,11 @@ var playCmd = &cobra.Command{
 	Short: "Play a local file",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		args[0], err = filepath.Abs(args[0])
+		if err != nil {
+			return err
+		}
 		payload, _ := sjson.Set("{}", "command", "play")
 		payload, _ = sjson.Set(payload, "args", map[string]string{})
 		payload, _ = sjson.Set(payload, "args.1", args[0])
@@ -154,7 +159,7 @@ var seekCmd = &cobra.Command{
 		payload, _ := sjson.Set("{}", "command", "seek")
 		payload, _ = sjson.Set(payload, "args", map[string]string{})
 		payload, _ = sjson.Set(payload, "args.1", args[0])
-		if _, err := strconv.ParseFloat(args[0], 64); err != nil {
+		if !numfuncs.ValidNum(args[0]) {
 			return fmt.Errorf("seek needs a number of seconds, got %q", args[0])
 		}
 		client, err := net.Dial("tcp", "127.0.0.1:3382")
@@ -195,9 +200,103 @@ var timeposCmd = &cobra.Command{
 	},
 }
 
+var stopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Unload current file and stop playback",
+	Args:  cobra.ExactArgs(0),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		payload := `{"command":"stop"}`
+		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		if err != nil {
+			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+		}
+		defer client.Close()
+		client.Write([]byte(payload))
+		buf := make([]byte, 4096)
+		client.Read(buf)
+		if !gjson.Get(string(buf), "success").Bool() {
+			return errors.New(gjson.Get(string(buf), "reason").String())
+		}
+		return nil
+	},
+}
+
+var rvolumeCmd = &cobra.Command{
+	Use:                "rvolume <volume>",
+	Short:              "Add/subtract volume relatively",
+	Args:               cobra.ExactArgs(1),
+	DisableFlagParsing: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		payload, _ := sjson.Set("{}", "command", "rvolume")
+		payload, _ = sjson.Set(payload, "args", map[string]string{})
+		payload, _ = sjson.Set(payload, "args.1", args[0])
+		if !numfuncs.ValidNum(args[0]) {
+			return fmt.Errorf("seek needs a number of seconds, got %q", args[0])
+		}
+		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		if err != nil {
+			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+		}
+		defer client.Close()
+		client.Write([]byte(payload))
+		buf := make([]byte, 4096)
+		client.Read(buf)
+		if !gjson.Get(string(buf), "success").Bool() {
+			return errors.New(gjson.Get(string(buf), "reason").String())
+		}
+		fmt.Println("Volume is now " + numfuncs.TruncateFloat(gjson.Get(string(buf), "volume").Float()))
+		return nil
+	},
+}
+
+var svolumeCmd = &cobra.Command{
+	Use:   "svolume <volume>",
+	Short: "Set volume",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		payload, _ := sjson.Set("{}", "command", "svolume")
+		payload, _ = sjson.Set(payload, "args", map[string]string{})
+		payload, _ = sjson.Set(payload, "args.1", args[0])
+		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		if err != nil {
+			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+		}
+		defer client.Close()
+		client.Write([]byte(payload))
+		buf := make([]byte, 4096)
+		client.Read(buf)
+		if !gjson.Get(string(buf), "success").Bool() {
+			return errors.New(gjson.Get(string(buf), "reason").String())
+		}
+		return nil
+	},
+}
+
+var volumeCmd = &cobra.Command{
+	Use:   "volume",
+	Short: "Get current volume",
+	Args:  cobra.ExactArgs(0),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		payload := `{"command": "volume"}`
+		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		if err != nil {
+			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+		}
+		defer client.Close()
+		client.Write([]byte(payload))
+		buf := make([]byte, 4096)
+		client.Read(buf)
+		if !gjson.Get(string(buf), "success").Bool() {
+			return errors.New(gjson.Get(string(buf), "reason").String())
+		}
+		fmt.Println("Volume is " + numfuncs.TruncateFloat(gjson.Get(string(buf), "volume").Float()))
+		return nil
+	},
+}
+
 func main() {
 	rootCmd.SilenceUsage = true
-	rootCmd.AddCommand(playCmd, searchCmd, togglepauseCmd, toggleloopCmd, seekCmd, timeposCmd)
+	rootCmd.AddCommand(playCmd, searchCmd, togglepauseCmd, toggleloopCmd, seekCmd, timeposCmd, stopCmd, rvolumeCmd, svolumeCmd, volumeCmd)
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}

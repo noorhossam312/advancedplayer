@@ -7,7 +7,7 @@ import (
 	"github.com/gen2brain/go-mpv"
 )
 
-func Play(path string, m *mpv.Mpv) error {
+func Play(m *mpv.Mpv, path string) error {
 	if err := m.Command([]string{"loadfile", path}); err != nil {
 		return err
 	}
@@ -43,4 +43,25 @@ func GetTimePos(m *mpv.Mpv) (int64, error) {
 	}
 
 	return timePosInt, nil
+}
+
+func UnloadFile(m *mpv.Mpv) error {
+	return m.Command([]string{"stop"})
+}
+
+func VolumeRelative(m *mpv.Mpv, volumeAmount string) (string, error) {
+	err := m.Command([]string{"add", "volume", volumeAmount})
+	if err != nil {
+		return "", err
+	}
+	currentVolume := m.GetPropertyString("volume")
+	return currentVolume, nil
+}
+
+func VolumeLiteral(m *mpv.Mpv, volume string) error {
+	return m.SetPropertyString("volume", volume)
+}
+
+func GetVolume(m *mpv.Mpv) string {
+	return m.GetPropertyString("volume")
 }

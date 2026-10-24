@@ -5,7 +5,10 @@ import (
 	"log"
 	"log/slog"
 	"net"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/gen2brain/go-mpv"
 	"github.com/noorhossam312/advancedplayer/internal/downloader"
@@ -24,13 +27,17 @@ var commands = map[string]string{
 	"toggleloop":  "TOGGLELOOP",
 	"seek":        "SEEK",
 	"timepos":     "TIMEPOS",
+	"stop":        "STOP",
+	"rvolume":     "RVOLUME",
+	"svolume":     "SVOLUME",
+	"volume":      "VOLUME",
 }
 
 func main() {
+	signal.Ignore(syscall.SIGHUP)
 	listener, err := net.Listen("tcp", "127.0.0.1:3382")
 	dieOnErr(err)
 	defer listener.Close()
-
 	m := mpv.New()
 	defer m.TerminateDestroy()
 	err = m.SetOptionString("idle", "yes")
@@ -41,25 +48,31 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		slog.Info("Shutting down safely...")
+		listener.Close()
+		m.TerminateDestroy()
+		os.Exit(0)
+	}()
+	buffer := make([]byte, 4096)
 	for {
 		success := `{"success": true}`
-
-		data := make([]byte, 0)
 		conn, err := listener.Accept()
 		if err != nil {
 			slog.Error("Failed to accept connection", "error", err)
 			continue
 		}
 
-		buffer := make([]byte, 4096)
-		n, _ := conn.Read(buffer)
+		n, err := conn.Read(buffer)
+		if err != nil || n == 0 {
+			conn.Close()
+			continue
+		}
 
-		data = append(data, buffer[:n]...)
-
-		stringData := string(data)
-
-		command := gjson.Get(stringData, "command")
+		command := gjson.GetBytes(buffer[:n], "command")
 
 		_, ok := commands[command.String()]
 
@@ -72,7 +85,7 @@ func main() {
 			continue
 		}
 
-		allArgs := gjson.Get(stringData, "args")
+		allArgs := gjson.GetBytes(buffer[:n], "args")
 
 		allArgsMapped := allArgs.Map()
 		switch command.String() {
@@ -86,17 +99,9 @@ func main() {
 				continue
 			}
 
-			err = player.Play(filePath.String(), m)
+			err = player.Play(m, filePath.String())
 			if err != nil {
 				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", err.Error())
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-
-			if err != nil {
-				success, _ := sjson.Set(success, "success", false)
 				success, _ = sjson.Set(success, "reason", err.Error())
 				conn.Write([]byte(success))
 				conn.Close()
@@ -147,7 +152,7 @@ func main() {
 				if err != nil {
 					slog.Error("Failed to download file", "error", err)
 				}
-				err = player.Play(filepath.Join(songsDir, cleanFilename), m)
+				err = player.Play(m, filepath.Join(songsDir, cleanFilename))
 				if err != nil {
 					slog.Error("Failed to play file", "error", err)
 				}
@@ -199,6 +204,37 @@ func main() {
 				continue
 			}
 			success, _ = sjson.Set(success, "timepos", timePosition)
+		case "stop":
+			err := player.UnloadFile(m)
+			if err != nil {
+				success, _ = sjson.Set(success, "success", false)
+				success, _ = sjson.Set(success, "reason", err.Error())
+				conn.Write([]byte(success))
+				conn.Close()
+				continue
+			}
+		case "rvolume":
+			currentVolume, err := player.VolumeRelative(m, allArgsMapped["1"].String())
+			if err != nil {
+				success, _ = sjson.Set(success, "success", false)
+				success, _ = sjson.Set(success, "reason", err.Error())
+				conn.Write([]byte(success))
+				conn.Close()
+				continue
+			}
+			success, _ = sjson.Set(success, "volume", currentVolume)
+		case "svolume":
+			err := player.VolumeLiteral(m, allArgsMapped["1"].String())
+			if err != nil {
+				success, _ = sjson.Set(success, "success", false)
+				success, _ = sjson.Set(success, "reason", err.Error())
+				conn.Write([]byte(success))
+				conn.Close()
+				continue
+			}
+		case "volume":
+			volume := player.GetVolume(m)
+			success, _ = sjson.Set(success, "volume", volume)
 		}
 
 		conn.Write([]byte(success))
