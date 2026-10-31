@@ -3,11 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 
 	"github.com/noorhossam312/advancedplayer/internal/downloader"
+	"github.com/noorhossam312/advancedplayer/internal/network"
 	"github.com/noorhossam312/advancedplayer/internal/numfuncs"
 	"github.com/noorhossam312/advancedplayer/internal/pathfuncs"
 	"github.com/noorhossam312/advancedplayer/internal/searcher"
@@ -36,16 +36,12 @@ var playCmd = &cobra.Command{
 		payload, _ := sjson.Set("{}", "command", "play")
 		payload, _ = sjson.Set(payload, "args", map[string]string{})
 		payload, _ = sjson.Set(payload, "args.1", args[0])
-		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
 		if err != nil {
-			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+			return err
 		}
-		defer client.Close()
-		client.Write([]byte(payload))
-		buf := make([]byte, 4096)
-		client.Read(buf)
-		if !gjson.Get(string(buf), "success").Bool() {
-			return errors.New(gjson.Get(string(buf), "reason").String())
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
 		}
 		return nil
 	},
@@ -58,6 +54,9 @@ var searchCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
 			result, title, err := searcher.QueryYtMusic("", 10)
+			if err != nil {
+				return err
+			}
 			songsDir, err := pathfuncs.SongsDir()
 			if err != nil {
 				return err
@@ -70,32 +69,24 @@ var searchCmd = &cobra.Command{
 			payload, _ := sjson.Set("{}", "command", "play")
 			payload, _ = sjson.Set(payload, "args", map[string]string{})
 			payload, _ = sjson.Set(payload, "args.1", filepath.Join(songsDir, cleanFilename))
-			client, err := net.Dial("tcp", "127.0.0.1:3382")
+			response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
 			if err != nil {
-				return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+				return err
 			}
-			defer client.Close()
-			client.Write([]byte(payload))
-			buf := make([]byte, 4096)
-			client.Read(buf)
-			if !gjson.Get(string(buf), "success").Bool() {
-				return errors.New(gjson.Get(string(buf), "reason").String())
+			if !gjson.GetBytes(response, "success").Bool() {
+				return errors.New(gjson.GetBytes(response, "reason").String())
 			}
 			return nil
 		}
 		payload, _ := sjson.Set("{}", "command", "search")
 		payload, _ = sjson.Set(payload, "args", map[string]string{})
 		payload, _ = sjson.Set(payload, "args.1", args[0])
-		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
 		if err != nil {
-			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+			return err
 		}
-		defer client.Close()
-		client.Write([]byte(payload))
-		buf := make([]byte, 4096)
-		client.Read(buf)
-		if !gjson.Get(string(buf), "success").Bool() {
-			return errors.New(gjson.Get(string(buf), "reason").String())
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
 		}
 		return nil
 	},
@@ -107,16 +98,12 @@ var togglepauseCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		payload := `{"command":"togglepause","args":{}}`
-		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
 		if err != nil {
-			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+			return err
 		}
-		defer client.Close()
-		client.Write([]byte(payload))
-		buf := make([]byte, 4096)
-		client.Read(buf)
-		if !gjson.Get(string(buf), "success").Bool() {
-			return errors.New(gjson.Get(string(buf), "reason").String())
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
 		}
 		return nil
 	},
@@ -128,19 +115,15 @@ var toggleloopCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		payload := `{"command":"toggleloop","args":{}}`
-		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
 		if err != nil {
-			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+			return err
 		}
-		defer client.Close()
-		client.Write([]byte(payload))
-		buf := make([]byte, 4096)
-		client.Read(buf)
-		if !gjson.Get(string(buf), "success").Bool() {
-			return errors.New(gjson.Get(string(buf), "reason").String())
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
 		}
 		var loopedHuman string
-		if gjson.Get(string(buf), "looped").Bool() {
+		if gjson.GetBytes(response, "looped").Bool() {
 			loopedHuman = "on"
 		} else {
 			loopedHuman = "off"
@@ -162,16 +145,12 @@ var seekCmd = &cobra.Command{
 		if !numfuncs.ValidNum(args[0]) {
 			return fmt.Errorf("seek needs a number of seconds, got %q", args[0])
 		}
-		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
 		if err != nil {
-			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+			return err
 		}
-		defer client.Close()
-		client.Write([]byte(payload))
-		buf := make([]byte, 4096)
-		client.Read(buf)
-		if !gjson.Get(string(buf), "success").Bool() {
-			return errors.New(gjson.Get(string(buf), "reason").String())
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
 		}
 		return nil
 	},
@@ -183,18 +162,14 @@ var timeposCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		payload := `{"command":"timepos","args":{}}`
-		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
 		if err != nil {
-			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+			return err
 		}
-		defer client.Close()
-		client.Write([]byte(payload))
-		buf := make([]byte, 4096)
-		client.Read(buf)
-		if !gjson.Get(string(buf), "success").Bool() {
-			return errors.New(gjson.Get(string(buf), "reason").String())
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
 		}
-		int64Time := gjson.Get(string(buf), "timepos").Int()
+		int64Time := gjson.GetBytes(response, "timepos").Int()
 		fmt.Println(timefuncs.SecondToHHMMSS(int64Time))
 		return nil
 	},
@@ -205,17 +180,13 @@ var stopCmd = &cobra.Command{
 	Short: "Unload current file and stop playback",
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		payload := `{"command":"stop"}`
-		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		payload := `{"command":"stop","args":{}}`
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
 		if err != nil {
-			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+			return err
 		}
-		defer client.Close()
-		client.Write([]byte(payload))
-		buf := make([]byte, 4096)
-		client.Read(buf)
-		if !gjson.Get(string(buf), "success").Bool() {
-			return errors.New(gjson.Get(string(buf), "reason").String())
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
 		}
 		return nil
 	},
@@ -231,20 +202,16 @@ var rvolumeCmd = &cobra.Command{
 		payload, _ = sjson.Set(payload, "args", map[string]string{})
 		payload, _ = sjson.Set(payload, "args.1", args[0])
 		if !numfuncs.ValidNum(args[0]) {
-			return fmt.Errorf("seek needs a number of seconds, got %q", args[0])
+			return fmt.Errorf("rvolume needs a numeric value, got %q", args[0])
 		}
-		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
 		if err != nil {
-			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+			return err
 		}
-		defer client.Close()
-		client.Write([]byte(payload))
-		buf := make([]byte, 4096)
-		client.Read(buf)
-		if !gjson.Get(string(buf), "success").Bool() {
-			return errors.New(gjson.Get(string(buf), "reason").String())
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
 		}
-		fmt.Println("Volume is now " + numfuncs.TruncateFloat(gjson.Get(string(buf), "volume").Float()))
+		fmt.Println("Volume is now " + numfuncs.TruncateFloat(gjson.GetBytes(response, "volume").Float()))
 		return nil
 	},
 }
@@ -257,16 +224,15 @@ var svolumeCmd = &cobra.Command{
 		payload, _ := sjson.Set("{}", "command", "svolume")
 		payload, _ = sjson.Set(payload, "args", map[string]string{})
 		payload, _ = sjson.Set(payload, "args.1", args[0])
-		client, err := net.Dial("tcp", "127.0.0.1:3382")
-		if err != nil {
-			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+		if !numfuncs.ValidNum(args[0]) {
+			return fmt.Errorf("svolume needs a numeric value, got %q", args[0])
 		}
-		defer client.Close()
-		client.Write([]byte(payload))
-		buf := make([]byte, 4096)
-		client.Read(buf)
-		if !gjson.Get(string(buf), "success").Bool() {
-			return errors.New(gjson.Get(string(buf), "reason").String())
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
+		if err != nil {
+			return err
+		}
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
 		}
 		return nil
 	},
@@ -277,26 +243,39 @@ var volumeCmd = &cobra.Command{
 	Short: "Get current volume",
 	Args:  cobra.ExactArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		payload := `{"command": "volume"}`
-		client, err := net.Dial("tcp", "127.0.0.1:3382")
+		payload := `{"command":"volume","args":{}}`
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
 		if err != nil {
-			return fmt.Errorf("could not connect, is advancedplayerd on? %w", err)
+			return err
 		}
-		defer client.Close()
-		client.Write([]byte(payload))
-		buf := make([]byte, 4096)
-		client.Read(buf)
-		if !gjson.Get(string(buf), "success").Bool() {
-			return errors.New(gjson.Get(string(buf), "reason").String())
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
 		}
-		fmt.Println("Volume is " + numfuncs.TruncateFloat(gjson.Get(string(buf), "volume").Float()))
+		fmt.Println("Volume is " + numfuncs.TruncateFloat(gjson.GetBytes(response, "volume").Float()))
+		return nil
+	},
+}
+
+var killCmd = &cobra.Command{
+	Use:   "kill",
+	Short: "Kill daemon",
+	Args:  cobra.ExactArgs(0),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		payload := `{"command":"kill","args":{}}`
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
+		if err != nil {
+			return err
+		}
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
+		}
 		return nil
 	},
 }
 
 func main() {
 	rootCmd.SilenceUsage = true
-	rootCmd.AddCommand(playCmd, searchCmd, togglepauseCmd, toggleloopCmd, seekCmd, timeposCmd, stopCmd, rvolumeCmd, svolumeCmd, volumeCmd)
+	rootCmd.AddCommand(playCmd, searchCmd, togglepauseCmd, toggleloopCmd, seekCmd, timeposCmd, stopCmd, rvolumeCmd, svolumeCmd, volumeCmd, killCmd)
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}

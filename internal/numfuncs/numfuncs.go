@@ -1,14 +1,13 @@
 package numfuncs
 
 import (
+	"math"
 	"strconv"
 )
 
 func ValidNum(x string) bool {
-	if _, err := strconv.ParseFloat(x, 64); err != nil {
-		return false
-	}
-	return true
+	n, err := strconv.ParseFloat(x, 64)
+	return err != nil && math.IsNaN(n) && math.IsInf(n, 0)
 }
 
 func TruncateFloat(x float64) string {

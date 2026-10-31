@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"log/slog"
@@ -31,12 +33,16 @@ var commands = map[string]string{
 	"rvolume":     "RVOLUME",
 	"svolume":     "SVOLUME",
 	"volume":      "VOLUME",
+	"kill":        "KILL",
 }
 
 func main() {
 	signal.Ignore(syscall.SIGHUP)
 	listener, err := net.Listen("tcp", "127.0.0.1:3382")
-	dieOnErr(err)
+	if err != nil {
+		slog.Error("Error while listening on port 3382", "error", err.Error())
+		os.Exit(1)
+	}
 	defer listener.Close()
 	m := mpv.New()
 	defer m.TerminateDestroy()
@@ -54,196 +60,193 @@ func main() {
 		<-sigChan
 		slog.Info("Shutting down safely...")
 		listener.Close()
-		m.TerminateDestroy()
-		os.Exit(0)
 	}()
-	buffer := make([]byte, 4096)
 	for {
-		success := `{"success": true}`
 		conn, err := listener.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
 			slog.Error("Failed to accept connection", "error", err)
 			continue
 		}
-
-		n, err := conn.Read(buffer)
-		if err != nil || n == 0 {
-			conn.Close()
-			continue
-		}
-
-		command := gjson.GetBytes(buffer[:n], "command")
-
-		_, ok := commands[command.String()]
-
-		if !ok {
-			slog.Error("No command", "command", command.String())
-			success, _ = sjson.Set(success, "success", false)
-			success, _ = sjson.Set(success, "reason", fmt.Sprintf("no such command %q", command.String()))
-			conn.Write([]byte(success))
-			conn.Close()
-			continue
-		}
-
-		allArgs := gjson.GetBytes(buffer[:n], "args")
-
-		allArgsMapped := allArgs.Map()
-		switch command.String() {
-		case "play":
-			filePath, ok := allArgsMapped["1"]
-			if !ok {
-				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", "expected filepath, found nothing")
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-
-			err = player.Play(m, filePath.String())
-			if err != nil {
-				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", err.Error())
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-
-		case "search":
-			//_, ok := allArgsMapped["1"]
-			//if !ok { // if no search arg exists
-			//	result, title, err := searcher.QueryYtMusic("", 10)
-			//	if err != nil {
-			//		success, _ := sjson.Set(success, "success", false)
-			//		success, _ = sjson.Set(success, "reason", err.Error())
-			//		conn.Write([]byte(success))
-			//		conn.Close()
-			//		continue
-			//	}
-			//	go func() {
-			//		cleanFilename := pathologize.Clean(title) + ".ogg"
-			//		songsDir, err := pathfuncs.SongsDir()
-			//		if err != nil {
-			//			slog.Error("Failed to get music library directory", "error", err)
-			//		}
-			//		err = downloader.DownloadFile(result, filepath.Join(songsDir, cleanFilename))
-			//		if err != nil {
-			//			slog.Error("Failed to download file", "error", err)
-			//		}
-			//		err = player.Play(filepath.Join(songsDir, cleanFilename), m)
-			//		if err != nil {
-			//			slog.Error("Failed to play file", "error", err)
-			//		}
-			//	}()
-			//} else { // if it DOES exist
-			result, title, err := searcher.QueryYtMusic(allArgsMapped["1"].String(), 10)
-			if err != nil {
-				success, _ := sjson.Set(success, "success", false)
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-			go func() {
-				cleanFilename := pathologize.Clean(title) + ".ogg"
-				songsDir, err := pathfuncs.SongsDir()
-				if err != nil {
-					slog.Error("Failed to get music library directory", "error", err)
-				}
-				err = downloader.DownloadFile(result, filepath.Join(songsDir, cleanFilename))
-				if err != nil {
-					slog.Error("Failed to download file", "error", err)
-				}
-				err = player.Play(m, filepath.Join(songsDir, cleanFilename))
-				if err != nil {
-					slog.Error("Failed to play file", "error", err)
-				}
-			}()
-		case "togglepause":
-			err := player.TogglePause(m)
-			if err != nil {
-				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", err.Error())
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-		case "toggleloop":
-			isLooped, err := player.ToggleLoop(m)
-			if err != nil {
-				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", err.Error())
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-			success, _ = sjson.Set(success, "looped", isLooped)
-		case "seek":
-			amountToSeekResult, ok := allArgsMapped["1"]
-			if !ok {
-				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", "expected argument after seek, found nothing")
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-			amountToSeekString := amountToSeekResult.String()
-			err := player.SeekRelative(m, amountToSeekString)
-			if err != nil {
-				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", err.Error())
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-		case "timepos":
-			timePosition, err := player.GetTimePos(m)
-			if err != nil {
-				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", err.Error())
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-			success, _ = sjson.Set(success, "timepos", timePosition)
-		case "stop":
-			err := player.UnloadFile(m)
-			if err != nil {
-				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", err.Error())
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-		case "rvolume":
-			currentVolume, err := player.VolumeRelative(m, allArgsMapped["1"].String())
-			if err != nil {
-				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", err.Error())
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-			success, _ = sjson.Set(success, "volume", currentVolume)
-		case "svolume":
-			err := player.VolumeLiteral(m, allArgsMapped["1"].String())
-			if err != nil {
-				success, _ = sjson.Set(success, "success", false)
-				success, _ = sjson.Set(success, "reason", err.Error())
-				conn.Write([]byte(success))
-				conn.Close()
-				continue
-			}
-		case "volume":
-			volume := player.GetVolume(m)
-			success, _ = sjson.Set(success, "volume", volume)
-		}
-
-		conn.Write([]byte(success))
-		conn.Close()
+		go handleConnection(conn, m)
 	}
 }
 
-func dieOnErr(e error) {
-	if e != nil {
-		log.Fatal(e.Error())
+func handleConnection(conn net.Conn, m *mpv.Mpv) bool {
+	defer conn.Close()
+	success := `{"success": true}`
+	reader := bufio.NewReader(conn)
+	request, err := reader.ReadBytes('\n')
+	if err != nil {
+		return false
 	}
+
+	command := gjson.GetBytes(request, "command")
+
+	_, ok := commands[command.String()]
+
+	if !ok {
+		slog.Error("No command", "command", command.String())
+		success, _ = sjson.Set(success, "success", false)
+		success, _ = sjson.Set(success, "reason", fmt.Sprintf("no such command %q", command.String()))
+		conn.Write(append([]byte(success), '\n'))
+		return false
+	}
+
+	allArgs := gjson.GetBytes(request, "args")
+
+	allArgsMapped := allArgs.Map()
+	switch command.String() {
+	case "play":
+		filePath, ok := allArgsMapped["1"]
+		if !ok {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", "expected filepath, found nothing")
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+
+		err = player.Play(m, filePath.String())
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+
+	case "search":
+		//_, ok := allArgsMapped["1"]
+		//if !ok { // if no search arg exists
+		//	result, title, err := searcher.QueryYtMusic("", 10)
+		//	if err != nil {
+		//		success, _ = sjson.Set(success, "success", false)
+		//		success, _ = sjson.Set(success, "reason", err.Error())
+		//		conn.Write([]byte(success))
+		//		conn.Close()
+		//		continue
+		//	}
+		//	go func() {
+		//		cleanFilename := pathologize.Clean(title) + ".ogg"
+		//		songsDir, err := pathfuncs.SongsDir()
+		//		if err != nil {
+		//			slog.Error("Failed to get music library directory", "error", err)
+		//		}
+		//		err = downloader.DownloadFile(result, filepath.Join(songsDir, cleanFilename))
+		//		if err != nil {
+		//			slog.Error("Failed to download file", "error", err)
+		//		}
+		//		err = player.Play(filepath.Join(songsDir, cleanFilename), m)
+		//		if err != nil {
+		//			slog.Error("Failed to play file", "error", err)
+		//		}
+		//	}()
+		//} else { // if it DOES exist
+		result, title, err := searcher.QueryYtMusic(allArgsMapped["1"].String(), 10)
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		cleanFilename := pathologize.Clean(title) + ".ogg"
+		songsDir, err := pathfuncs.SongsDir()
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		err = downloader.DownloadFile(result, filepath.Join(songsDir, cleanFilename))
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		err = player.Play(m, filepath.Join(songsDir, cleanFilename))
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+	case "togglepause":
+		err := player.TogglePause(m)
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+	case "toggleloop":
+		isLooped, err := player.ToggleLoop(m)
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		success, _ = sjson.Set(success, "looped", isLooped)
+	case "seek":
+		amountToSeekResult, ok := allArgsMapped["1"]
+		if !ok {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", "expected argument after seek, found nothing")
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		amountToSeekString := amountToSeekResult.String()
+		err := player.SeekRelative(m, amountToSeekString)
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+	case "timepos":
+		timePosition, err := player.GetTimePos(m)
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		success, _ = sjson.Set(success, "timepos", timePosition)
+	case "stop":
+		err := player.UnloadFile(m)
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+	case "rvolume":
+		currentVolume, err := player.VolumeRelative(m, allArgsMapped["1"].String())
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		success, _ = sjson.Set(success, "volume", currentVolume)
+	case "svolume":
+		err := player.VolumeLiteral(m, allArgsMapped["1"].String())
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+	case "volume":
+		volume := player.GetVolume(m)
+		success, _ = sjson.Set(success, "volume", volume)
+	case "kill":
+		slog.Info("Received \"kill\" command, shutting down gracefully...")
+		conn.Write(append([]byte(success), '\n'))
+		return true
+	}
+	conn.Write(append([]byte(success), '\n'))
+	return false
 }
