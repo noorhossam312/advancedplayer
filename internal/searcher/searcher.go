@@ -52,7 +52,7 @@ func QueryYtMusic(searchQuery string, querySize uint8) (string, string, error) {
 	videoIdPath := "musicResponsiveListItemRenderer.playlistItemData.videoId"
 	titlePath := "musicResponsiveListItemRenderer.flexColumns.0.musicResponsiveListItemFlexColumnRenderer.text.runs.0.text"
 
-	if !interactiveMode && searchQuery != "" {
+	if !interactiveMode && searchQuery != "" && allVids.Get("0").Exists() && allVids.Get(fmt.Sprintf("0.%s", videoIdPath)).String() != "" {
 		firstId := allVids.Get(fmt.Sprintf("0.%s", videoIdPath))
 		title := allVids.Get(fmt.Sprintf("0.%s", titlePath))
 		firstIdLink := fmt.Sprintf("https://www.youtube.com/watch?v=%s", firstId.String())
@@ -102,7 +102,7 @@ func PromptUserPick(allVids gjson.Result, titlePath string, videoIdPath string, 
 		return "", "", err
 	}
 
-	if selectedSongInt < 1 || selectedSongInt > int(querySize) {
+	if selectedSongInt < 1 || allVids.Get(strconv.Itoa(selectedSongInt-1)).Exists() {
 		return "", "", fmt.Errorf("selection must be between 1 and %d", querySize)
 	}
 

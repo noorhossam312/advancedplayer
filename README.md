@@ -22,7 +22,7 @@ advanceDplayer (alternatively advancedplayer) is a music player daemon written i
 
 ## Prerequisites
 - `libmpv`
-- `go 1.26+` (if building from source)
+- `latest go 1.27+` (if building from source)
 
 ## Usage
 Download binaries from the [Releases](https://github.com/noorhossam312/advancedplayer/releases) page, or build from source:
@@ -54,7 +54,7 @@ or if you downloaded the binaries:
 
 ### Prerequisites
 - `libmpv`
-- `go 1.26+`
+- `latest go 1.27`
 
 ### Build
 `go mod download`

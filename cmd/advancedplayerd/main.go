@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 
 	"github.com/gen2brain/go-mpv"
@@ -35,6 +36,8 @@ var commands = map[string]string{
 	"volume":      "VOLUME",
 	"kill":        "KILL",
 }
+
+var once sync.Once
 
 func main() {
 	signal.Ignore(syscall.SIGHUP)
@@ -70,7 +73,13 @@ func main() {
 			slog.Error("Failed to accept connection", "error", err)
 			continue
 		}
-		go handleConnection(conn, m)
+		go func(conn net.Conn, m *mpv.Mpv) {
+			if handleConnection(conn, m) {
+				once.Do(func() {
+					listener.Close()
+				})
+			}
+		}(conn, m)
 	}
 }
 
