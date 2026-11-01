@@ -102,7 +102,7 @@ func PromptUserPick(allVids gjson.Result, titlePath string, videoIdPath string, 
 		return "", "", err
 	}
 
-	if selectedSongInt < 1 || allVids.Get(strconv.Itoa(selectedSongInt-1)).Exists() {
+	if selectedSongInt < 1 || !allVids.Get(strconv.Itoa(selectedSongInt-1)).Exists() || selectedSongInt > int(querySize) {
 		return "", "", fmt.Errorf("selection must be between 1 and %d", querySize)
 	}
 
