@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"net/url"
 
 	"github.com/gen2brain/go-mpv"
 	"github.com/noorhossam312/advancedplayer/internal/downloader"
@@ -35,6 +36,7 @@ var commands = map[string]string{
 	"svolume":     "SVOLUME",
 	"volume":      "VOLUME",
 	"kill":        "KILL",
+	"dl": "DL",
 }
 
 var once sync.Once
@@ -255,6 +257,31 @@ func handleConnection(conn net.Conn, m *mpv.Mpv) bool {
 		slog.Info("Received \"kill\" command, shutting down gracefully...")
 		conn.Write(append([]byte(success), '\n'))
 		return true
+	case "dl":
+		linkR, ok := allArgsMapped["1"]
+		if !ok {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", "expected link, found nothing")
+		}
+		link := linkR.String()
+		filenameR, ok := allArgsMapped["2"]
+		var filename string
+		if !ok {
+			parsedUrl, err := url.Parse(linkR.String())
+			if err != nil {
+				success, _ = sjson.Set(success, "success", false)
+				success, _ = sjson.Set(success, "reason", err.Error())
+			}
+			filename = parsedUrl.Query().Get("v")
+		} else {
+			filename = filenameR.String()
+		}
+		songsDir, err := pathfuncs.SongsDir()
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+		}
+		downloader.DownloadFile(link, filepath.Join(songsDir, filename))
 	}
 	conn.Write(append([]byte(success), '\n'))
 	return false
