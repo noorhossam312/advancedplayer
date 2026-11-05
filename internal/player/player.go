@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gen2brain/go-mpv"
+	"github.com/tidwall/sjson"
 )
 
 func Play(m *mpv.Mpv, path string) error {
@@ -64,4 +65,24 @@ func VolumeLiteral(m *mpv.Mpv, volume string) error {
 
 func GetVolume(m *mpv.Mpv) string {
 	return m.GetPropertyString("volume")
+}
+
+func Status(m *mpv.Mpv) (string, error) {
+	volume := GetVolume(m)
+	timePos, err := GetTimePos(m)
+	if err != nil {
+		return "", err
+	}
+	looped := m.GetPropertyString("loop-file") == "yes"
+	paused := isPaused(m)
+	final, _ := sjson.Set("{}", "volume", volume)
+	final, _ = sjson.Set(final, "timepos", timePos)
+	final, _ = sjson.Set(final, "looped", looped)
+	final, _ = sjson.Set(final, "paused", paused)
+	return final, nil
+}
+
+// Unexported functions
+func isPaused(m *mpv.Mpv) bool {
+	return m.GetPropertyString("idle-active") == "yes"
 }
