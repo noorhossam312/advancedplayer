@@ -5,15 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/noorhossam312/advancedplayer/internal/downloader"
+	
 	"github.com/noorhossam312/advancedplayer/internal/network"
 	"github.com/noorhossam312/advancedplayer/internal/numfuncs"
-	"github.com/noorhossam312/advancedplayer/internal/pathfuncs"
 	"github.com/noorhossam312/advancedplayer/internal/searcher"
 	"github.com/noorhossam312/advancedplayer/internal/timefuncs"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pathologize"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -57,19 +54,22 @@ var searchCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			songsDir, err := pathfuncs.SongsDir()
-			if err != nil {
-				return err
-			}
-			cleanFilename := pathologize.Clean(title) + ".ogg"
-			err = downloader.DownloadFile(result, filepath.Join(songsDir, cleanFilename))
-			if err != nil {
-				return err
-			}
-			payload, _ := sjson.Set("{}", "command", "play")
+			payload, _ := sjson.Set("{}", "command", "dl")
 			payload, _ = sjson.Set(payload, "args", map[string]string{})
-			payload, _ = sjson.Set(payload, "args.1", filepath.Join(songsDir, cleanFilename))
+			payload, _ = sjson.Set(payload, "args.1", result)
+			payload, _ = sjson.Set(payload, "args.2", title)
 			response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
+			if err != nil {
+				return err
+			}
+			if !gjson.GetBytes(response, "success").Bool() {
+				return errors.New(gjson.GetBytes(response, "reason").String())
+			}
+			pathToFile := gjson.GetBytes(response, "path")
+			payload, _ = sjson.Set("{}", "command", "play")
+			payload, _ = sjson.Set(payload, "args", map[string]string{})
+			payload, _ = sjson.Set(payload, "args.1", pathToFile.String())
+			response, err = network.SendAndRecv("127.0.0.1", "3382", payload)
 			if err != nil {
 				return err
 			}
@@ -273,9 +273,31 @@ var killCmd = &cobra.Command{
 	},
 }
 
+var dlCmd = &cobra.Command{
+	Use: "dl <link> [filename]",
+	Short: "Download a file without playback",
+	Args: cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		payload, _ := sjson.Set("", "command", "dl")
+		payload, _ = sjson.Set(payload, "args", map[string]string{})
+		payload, _ = sjson.Set(payload, "args.1", args[0])
+		if len(args) == 2 {
+			payload, _ = sjson.Set(payload, "args.2", args[1])
+		}
+		response, err := network.SendAndRecv("127.0.0.1", "3382", payload)
+		if err != nil {
+			return err
+		}
+		if !gjson.GetBytes(response, "success").Bool() {
+			return errors.New(gjson.GetBytes(response, "reason").String())
+		}
+		return nil
+	},
+}
+
 func main() {
 	rootCmd.SilenceUsage = true
-	rootCmd.AddCommand(playCmd, searchCmd, togglepauseCmd, toggleloopCmd, seekCmd, timeposCmd, stopCmd, rvolumeCmd, svolumeCmd, volumeCmd, killCmd)
+	rootCmd.AddCommand(playCmd, searchCmd, togglepauseCmd, toggleloopCmd, seekCmd, timeposCmd, stopCmd, rvolumeCmd, svolumeCmd, volumeCmd, killCmd, dlCmd)
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}

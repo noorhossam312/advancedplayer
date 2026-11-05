@@ -7,12 +7,12 @@ import (
 	"log"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"sync"
 	"syscall"
-	"net/url"
 
 	"github.com/gen2brain/go-mpv"
 	"github.com/noorhossam312/advancedplayer/internal/downloader"
@@ -36,7 +36,7 @@ var commands = map[string]string{
 	"svolume":     "SVOLUME",
 	"volume":      "VOLUME",
 	"kill":        "KILL",
-	"dl": "DL",
+	"dl":          "DL",
 }
 
 var once sync.Once
@@ -262,6 +262,8 @@ func handleConnection(conn net.Conn, m *mpv.Mpv) bool {
 		if !ok {
 			success, _ = sjson.Set(success, "success", false)
 			success, _ = sjson.Set(success, "reason", "expected link, found nothing")
+			conn.Write(append([]byte(success), '\n'))
+			return false
 		}
 		link := linkR.String()
 		filenameR, ok := allArgsMapped["2"]
@@ -271,17 +273,29 @@ func handleConnection(conn net.Conn, m *mpv.Mpv) bool {
 			if err != nil {
 				success, _ = sjson.Set(success, "success", false)
 				success, _ = sjson.Set(success, "reason", err.Error())
+				conn.Write(append([]byte(success), '\n'))
+				return false
 			}
 			filename = parsedUrl.Query().Get("v")
 		} else {
 			filename = filenameR.String()
 		}
+		filename = pathologize.Clean(filename) + ".ogg"
 		songsDir, err := pathfuncs.SongsDir()
 		if err != nil {
 			success, _ = sjson.Set(success, "success", false)
 			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
 		}
-		downloader.DownloadFile(link, filepath.Join(songsDir, filename))
+		err = downloader.DownloadFile(link, filepath.Join(songsDir, filename))
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		success, _ = sjson.Set(success, "path", filepath.Join(songsDir, filename))
 	}
 	conn.Write(append([]byte(success), '\n'))
 	return false
