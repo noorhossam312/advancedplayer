@@ -16,3 +16,12 @@ func SongsDir() (string, error) {
 	dir := filepath.Join(home, "Music", "advancedplayer")
 	return dir, os.MkdirAll(dir, 0o755)
 }
+
+func ConfigDir() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(configDir, "advancedplayer")
+	return dir, os.MkdirAll(dir, 0o755)
+}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/noorhossam312/advancedplayer/internal/timefuncs"
 	"github.com/tidwall/gjson"
+	// "github.com/google/shlex"
 )
 
 func HumanizeStatus(json string) string { // {"volume":50,"timepos":120.5,"looped":true,"paused":false}
@@ -39,3 +40,16 @@ Paused: %s`,
 	)
 	return final
 }
+
+// func ExpandAlias(aliasMap string, alias string) ([]string, bool, error) {
+// 	aliasValue := gjson.Get(aliasMap, gjson.Escape(alias))
+// 	if !aliasValue.Exists() {
+// 		return nil, false, nil
+// 	}
+// 	result, err := shlex.Split(aliasValue.String())
+// 	if err != nil {
+// 		return nil, true, fmt.Errorf("bad alias %q: %w", alias, err)
+// 	}
+// 	return result, true, nil
+// }
+
