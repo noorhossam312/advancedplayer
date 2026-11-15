@@ -73,7 +73,7 @@ func Status(m *mpv.Mpv) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	looped := m.GetPropertyString("loop-file") == "yes"
+	looped := m.GetPropertyString("loop-file") == "inf"
 	paused := isPaused(m)
 	final, _ := sjson.Set("{}", "volume", volume)
 	final, _ = sjson.Set(final, "timepos", timePos)
@@ -84,5 +84,5 @@ func Status(m *mpv.Mpv) (string, error) {
 
 // Unexported functions
 func isPaused(m *mpv.Mpv) bool {
-	return m.GetPropertyString("idle-active") == "yes"
+	return m.GetPropertyString("pause") == "yes"
 }
