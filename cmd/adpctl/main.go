@@ -461,6 +461,7 @@ var libraryCmd = &cobra.Command{
 	},
 }
 
+
 func main() {
 	rootCmd.SilenceUsage = true
 	rootCmd.AddCommand(playCmd, searchCmd, togglepauseCmd, toggleloopCmd, seekCmd, timeposCmd, stopCmd, bvolumeCmd, killCmd, dlCmd, dlpCmd, statusCmd, statusjCmd, libraryCmd)

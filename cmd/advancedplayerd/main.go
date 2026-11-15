@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/gen2brain/go-mpv"
 	"github.com/noorhossam312/advancedplayer/internal/downloader"
@@ -37,6 +38,8 @@ var commands = map[string]string{
 	"volume":      "VOLUME",
 	"kill":        "KILL",
 	"dl":          "DL",
+	"dlp": "DLP",
+	"status": "STATUS",
 }
 
 var once sync.Once
@@ -88,9 +91,16 @@ func main() {
 func handleConnection(conn net.Conn, m *mpv.Mpv) bool {
 	defer conn.Close()
 	success := `{"success": true}`
+	if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		slog.Error("failed to set deadline", "error", err)
+		return false
+	}
 	reader := bufio.NewReader(conn)
 	request, err := reader.ReadBytes('\n')
 	if err != nil {
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			slog.Warn("timed out while waiting for newline character (30 seconds)")
+		}
 		return false
 	}
 
@@ -296,6 +306,60 @@ func handleConnection(conn net.Conn, m *mpv.Mpv) bool {
 			return false
 		}
 		success, _ = sjson.Set(success, "path", filepath.Join(songsDir, filename))
+	case "dlp":
+		linkR, ok := allArgsMapped["1"]
+		if !ok {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", "expected link, found nothing")
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		link := linkR.String()
+		filenameR, ok := allArgsMapped["2"]
+		var filename string
+		if !ok {
+			parsedUrl, err := url.Parse(linkR.String())
+			if err != nil {
+				success, _ = sjson.Set(success, "success", false)
+				success, _ = sjson.Set(success, "reason", err.Error())
+				conn.Write(append([]byte(success), '\n'))
+				return false
+			}
+			filename = parsedUrl.Query().Get("v")
+		} else {
+			filename = filenameR.String()
+		}
+		filename = pathologize.Clean(filename) + ".ogg"
+		songsDir, err := pathfuncs.SongsDir()
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		err = downloader.DownloadFile(link, filepath.Join(songsDir, filename))
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		err = player.Play(m, filepath.Join(songsDir, filename))
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+	case "status":
+		status, err := player.Status(m)
+		if err != nil {
+			success, _ = sjson.Set(success, "success", false)
+			success, _ = sjson.Set(success, "reason", err.Error())
+			conn.Write(append([]byte(success), '\n'))
+			return false
+		}
+		success, _ = sjson.Set(status, "success", true)
 	}
 	conn.Write(append([]byte(success), '\n'))
 	return false
