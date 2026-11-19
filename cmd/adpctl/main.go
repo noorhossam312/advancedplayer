@@ -434,12 +434,12 @@ var libraryCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if len(files) == 0 {
-			return errors.New("no music in music directory")
-		}
 		files = slices.DeleteFunc(files, func(e os.DirEntry) bool {
 			return e.IsDir()
 		})
+		if len(files) == 0 {
+			return errors.New("no music in music directory")
+		}
 		for index, file := range files {
 			fmt.Printf("(%d) %s\n", index+1, file.Name())
 		}
