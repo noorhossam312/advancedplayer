@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"bufio"
 	"strconv"
+	"slices"
 
 	"github.com/noorhossam312/advancedplayer/internal/network"
 	"github.com/noorhossam312/advancedplayer/internal/numfuncs"
@@ -367,6 +368,9 @@ var bvolumeCmd = &cobra.Command{
 		if len(args) == 0 {
 			mode = "pvol"
 		} else {
+			if args[0] == "" {
+				return errors.New("expected volume, got \"\"")
+			}
 			if args[0][:1] != "+" && args[0][:1] != "-" {
 				mode = "svol"		
 			}
@@ -427,9 +431,15 @@ var libraryCmd = &cobra.Command{
 			return err
 		}
 		files, err := os.ReadDir(songsDir)
+		if err != nil {
+			return err
+		}
 		if len(files) == 0 {
 			return errors.New("no music in music directory")
 		}
+		files = slices.DeleteFunc(files, func(e os.DirEntry) bool {
+			return e.IsDir()
+		})
 		for index, file := range files {
 			fmt.Printf("(%d) %s\n", index+1, file.Name())
 		}

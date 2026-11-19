@@ -26,9 +26,6 @@ func SendAndRecv(address string, port string, payload string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := client.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		return nil, err
-	}
 	reader := bufio.NewReader(client)
 	response, err := reader.ReadBytes('\n')
 	if err != nil {
